@@ -1,9 +1,34 @@
+import sys
+import getopt
 from flask import Flask, jsonify, request
 from SQLModule import SQLConnector
 
+address = 'localhost'
+login = 'root'
+password = 'toor'
+database = 'restfullists'
+
+opts, args = getopt.getopt(sys.argv[1:], "ha:l:p:d:")
+for opt, arg in opts:
+    if opt == '-h':
+        print('python server.py [-a <server_address>] [-l <login>] [-p <password>] [-d <database>]')
+        sys.exit()
+    if opt == '-a':
+        address = arg
+    elif opt == "-l":
+        login = arg
+    elif opt == "-p":
+        password = arg
+    elif opt == "-d":
+        database = arg
+
 app = Flask(__name__)
 
-conn = SQLConnector('localhost', 'root', '!C75dcdc', 'restfullists')
+try:
+    conn = SQLConnector(address, login, password, database)
+except Exception as e:
+    print(e)
+    sys.exit()
 
 sqlCommands = {
     "selectLists" : "SELECT * FROM `lists`;",
