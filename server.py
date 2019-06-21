@@ -1,6 +1,6 @@
-from flask import Flask, jsonify, abort, make_response, request
+from flask import Flask, jsonify, request
 from SQLModule import SQLConnector
-# from flask_mysqldb import MySQL
+
 app = Flask(__name__)
 
 conn = SQLConnector('localhost', 'root', '!C75dcdc', 'restfullists')
@@ -10,10 +10,11 @@ sqlCommands = {
     "selectList"  : "SELECT `name` FROM `lists` WHERE `name` = %s;",
     "selectItems" : "SELECT `name`, `checked` FROM `items` where `list` = %s;",
     "selectItem"  : "SELECT `name` FROM `items` WHERE `ID` = %s;",
+    "selectMaxID" : "SELECT MAX(`ID`) FROM `items` WHERE `list` = %s",
     "createList"  : "INSERT INTO `lists` VALUES (%s);",
     "deleteList"  : "DELETE FROM `lists` WHERE (`name` = %s);",
-    "createItem"  : "INSERT INTO `items` (`list`, `name`) VALUES (%s, %s);",
-    "lastId"      : "SELECT LAST_INSERT_ID();",
+    "deleteLItems": "DELETE FROM `items` WHERE (`list` = %s);",
+    "createItem"  : "INSERT INTO `items` (`ID`, `list`, `name`) VALUES (%s, %s, %s);",
     "chStateItem" : "UPDATE `items` SET `checked` = %s WHERE (`ID` = %s);",
     "deleteItem"  : "DELETE FROM `items` WHERE (`ID` = %s);"
 }
@@ -27,7 +28,7 @@ def checkListExists(name):
     res = conn.select(sqlCommands["selectList"], (name,))
     if res[0]:
         if len(res[1]) != 1:
-            return (False, (jsonify("Checklist of given ID does not exist."), 404))
+            return (False, ("", 404))
     else:
         return (False, (jsonify(res[1]), 418))
     return (True, ("", ""))
@@ -39,7 +40,7 @@ def checkItemExists(id):
     res = conn.select(sqlCommands["selectItem"], (id,))
     if res[0]:
         if len(res[1]) != 1:
-            return (False, (jsonify("Item of given ID does not exist."), 404))
+            return (False, ("", 404))
     else:
         return (False, (jsonify(res[1]), 418))
     return (True, ("", ""))
@@ -59,7 +60,7 @@ def listsGet():
 @app.route('/lists', methods=['POST'])
 def listCreate():
     """
-    Checks is a checklist with provided name already exists. If it doesn't, creates a new one.
+    Checks if a checklist with provided name already exists. If it doesn't, creates a new one.
     """
     if not request.json:
         return jsonify("No request provided"), 400
@@ -93,7 +94,9 @@ def listDelete(name):
 
     res = conn.execute(sqlCommands["deleteList"], (name,))
     if res[0]:
-        return "", 200
+        res = conn.execute(sqlCommands["deleteLItems"], (name,))
+        if res[0]:
+            return "", 200
     return jsonify(res[1]), 418
 
 ### /lists/{name}/items
@@ -110,7 +113,6 @@ def itemGet(name):
     res = conn.select(sqlCommands["selectItems"], (name,))
     if res[0]:
         final = []
-        print(res[1])
         for item in res[1]:
             temp = {}
             temp["name"] = item[0]
@@ -122,8 +124,8 @@ def itemGet(name):
 @app.route('/lists/<name>/items', methods=['POST'])
 def itemAdd(name):
     """
-    Checks if a provided checklist exists. If it does, it adds an item to the checklist and returns
-    the item's id.
+    Checks if a provided checklist exists. If it does, it adds a new item to the checklist and returns
+    it's id.
     """
     if not request.json:
         return jsonify("No request provided"), 400
@@ -136,11 +138,12 @@ def itemAdd(name):
     if not res[0]:
         return res[1]
 
-    res = conn.execute(sqlCommands["createItem"], (name, rq,))
+    res = conn.select(sqlCommands["selectMaxID"], (name,))
     if res[0]:
-        res = conn.select(sqlCommands["lastId"], ())
+        nextID = 1 if (res[1][0][0] == None) else (res[1][0][0] + 1)
+        res = conn.execute(sqlCommands["createItem"], (nextID, name, rq,))
         if res[0]:
-            return jsonify(res[1][0][0]), 201
+            return jsonify(nextID), 201
     return jsonify(res[1]), 418
 
 ### /lists/{name}/items/{id}
