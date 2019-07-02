@@ -1,48 +1,19 @@
 import sys
-import getopt
 from flask import Flask, jsonify, request
 from SQLModule import SQLConnector
-
-address = 'localhost'
-login = 'root'
-password = 'toor'
-database = 'restfullists'
-
-opts, args = getopt.getopt(sys.argv[1:], "ha:l:p:d:")
-for opt, arg in opts:
-    if opt == '-h':
-        print('python server.py [-a <server_address>] [-l <login>] [-p <password>] [-d <database>]')
-        sys.exit()
-    if opt == '-a':
-        address = arg
-    elif opt == "-l":
-        login = arg
-    elif opt == "-p":
-        password = arg
-    elif opt == "-d":
-        database = arg
+from ServerConstants import *
 
 app = Flask(__name__)
+conn = None
 
-try:
-    conn = SQLConnector(address, login, password, database)
-except Exception as e:
-    print(e)
-    sys.exit()
-
-sqlCommands = {
-    "selectLists" : "SELECT * FROM `lists`;",
-    "selectList"  : "SELECT `name` FROM `lists` WHERE `name` = %s;",
-    "selectItems" : "SELECT `name`, `checked` FROM `items` where `list` = %s;",
-    "selectItem"  : "SELECT `name` FROM `items` WHERE `ID` = %s;",
-    "selectMaxID" : "SELECT MAX(`ID`) FROM `items` WHERE `list` = %s",
-    "createList"  : "INSERT INTO `lists` VALUES (%s);",
-    "deleteList"  : "DELETE FROM `lists` WHERE (`name` = %s);",
-    "deleteLItems": "DELETE FROM `items` WHERE (`list` = %s);",
-    "createItem"  : "INSERT INTO `items` (`ID`, `list`, `name`) VALUES (%s, %s, %s);",
-    "chStateItem" : "UPDATE `items` SET `checked` = %s WHERE (`ID` = %s);",
-    "deleteItem"  : "DELETE FROM `items` WHERE (`ID` = %s);"
-}
+def startApp(address, login, password, database):
+    global conn
+    try:
+        conn = SQLConnector(address, login, password, database)
+    except Exception as e:
+        print(e)
+        sys.exit()
+    app.run(debug=True)
 
 ### General functions
 
@@ -50,25 +21,16 @@ def checkListExists(name):
     """
     Checks if a list with provided name exists in the database.
     """
-    res = conn.select(sqlCommands["selectList"], (name,))
-    if res[0]:
-        if len(res[1]) != 1:
-            return (False, ("", 404))
-    else:
-        return (False, (jsonify(res[1]), 418))
-    return (True, ("", ""))
+    res = conn.select(SQLCommands["selectList"], (name,))
+    return (True if len(res) == 1 else False)
+        
 
 def checkItemExists(id):
     """
     Checks if an item with provided list name and id exists in the database.
     """
-    res = conn.select(sqlCommands["selectItem"], (id,))
-    if res[0]:
-        if len(res[1]) != 1:
-            return (False, ("", 404))
-    else:
-        return (False, (jsonify(res[1]), 418))
-    return (True, ("", ""))
+    res = conn.select(SQLCommands["selectItem"], (id,))
+    return (True if len(res) == 1 else False)
 
 ### /lists
 
@@ -77,31 +39,29 @@ def listsGet():
     """
     Tries to fetch a list of checklists.
     """
-    res = conn.select(sqlCommands["selectLists"], ())
-    if res[0]:
-        return jsonify([checklist[0] for checklist in res[1]]), 200
-    return jsonify(res[1]), 418
+    try:
+        res = conn.select(SQLCommands["selectLists"], ())
+        return jsonify([checklist[0] for checklist in res]), 200
+    except Exception as e:
+        return jsonify(e), 418
+
 
 @app.route('/lists', methods=['POST'])
 def listCreate():
     """
     Checks if a checklist with provided name already exists. If it doesn't, creates a new one.
     """
-    if not request.json:
-        return jsonify("No request provided"), 400
-
     rq = str(request.json)
     if len(rq) == 0:
         return jsonify("Empty name provided"), 400
 
-    res = checkListExists(rq)
-    if res[0]:
-        return "", 409
-
-    res = conn.execute(sqlCommands["createList"], (rq,))
-    if res[0]:
+    try:
+        if checkListExists(rq):
+            return "", 409
+        conn.execute(SQLCommands["createList"], (rq,))
         return "", 201
-    return jsonify(res[1]), 418
+    except Exception as e:
+        return jsonify(e), 418
 
 ### /lists/{name}
 
@@ -113,16 +73,14 @@ def listDelete(name):
     if len(name) == 0:
         return jsonify("You have to privde an ID."), 404
 
-    res = checkListExists(name)
-    if not res[0]:
-        return "", 404
-
-    res = conn.execute(sqlCommands["deleteList"], (name,))
-    if res[0]:
-        res = conn.execute(sqlCommands["deleteLItems"], (name,))
-        if res[0]:
-            return "", 200
-    return jsonify(res[1]), 418
+    try:
+        if not checkListExists(name):
+            return "", 404
+        conn.execute(SQLCommands["deleteLItems"], (name,))
+        conn.execute(SQLCommands["deleteList"], (name,))
+        return "", 200
+    except Exception as e:
+        return jsonify(e), 418
 
 ### /lists/{name}/items
 
@@ -131,20 +89,20 @@ def itemGet(name):
     """
     Checks if a checklist with provided name exists, then returns a list of it's items.
     """
-    res = checkListExists(name)
-    if not res[0]:
-        return res[1]
 
-    res = conn.select(sqlCommands["selectItems"], (name,))
-    if res[0]:
-        final = []
-        for item in res[1]:
-            temp = {}
-            temp["name"] = item[0]
-            temp["checked"] = True if item[1] == 1 else False
-            final += [temp]
-        return jsonify(final), 200
-    return jsonify(res[1]), 418
+    if len(name) == 0:
+        return jsonify("You have to privde an ID."), 404
+    
+    try:
+        if not checkListExists(name):
+            return "", 404
+
+        res = conn.select(SQLCommands["selectItems"], (name,))
+        return jsonify([{"name" : item[0], 
+                         "checked" : True if item[1] == 1 else False}
+                          for item in res]), 200
+    except Exception as e:
+        return jsonify(e), 418
 
 @app.route('/lists/<name>/items', methods=['POST'])
 def itemAdd(name):
@@ -152,24 +110,21 @@ def itemAdd(name):
     Checks if a provided checklist exists. If it does, it adds a new item to the checklist and returns
     it's id.
     """
-    if not request.json:
-        return jsonify("No request provided"), 400
-
     rq = request.json
     if len(rq) == 0:
         return jsonify("No name provided"), 400
 
-    res = checkListExists(name)
-    if not res[0]:
-        return res[1]
+    try:
+        if not checkListExists(name):
+            return "", 404
 
-    res = conn.select(sqlCommands["selectMaxID"], (name,))
-    if res[0]:
-        nextID = 1 if (res[1][0][0] == None) else (res[1][0][0] + 1)
-        res = conn.execute(sqlCommands["createItem"], (nextID, name, rq,))
-        if res[0]:
-            return jsonify(nextID), 201
-    return jsonify(res[1]), 418
+        res = conn.select(SQLCommands["selectMaxID"], (name,))
+        nextID = 1 if (res[0][0] == None) else (res[0][0] + 1)
+        conn.execute(SQLCommands["createItem"], (nextID, name, rq,))
+        return jsonify(nextID), 201
+    except Exception as e:
+        print(e)
+        return jsonify(e), 418
 
 ### /lists/{name}/items/{id}
 
@@ -182,36 +137,25 @@ def itemChangeState(name, id):
     if rq not in [True, False]:
         return jsonify("Wrong request content"), 400
 
-    res = checkListExists(name)
-    if not res[0]:
-        return res[1]
+    try:
+        if not checkListExists(name) or not checkItemExists(id):
+            return "", 404
 
-    res = checkItemExists(id)
-    if not res[0]:
-        return res[1]
-
-    res = conn.execute(sqlCommands["chStateItem"], (1 if rq else 0, id,))
-    if res[0]:
+        conn.execute(SQLCommands["chStateItem"], (1 if rq else 0, id,))
         return "", 202
-    return jsonify(res[1]), 418
+    except Exception as e:
+        return jsonify(e), 418
 
 @app.route('/lists/<name>/items/<id>', methods=['DELETE'])
 def itemDelete(name, id):
     """
     Checks if provided checklist and an item of given ID exist. If so, deletes the item.
     """
-    res = checkListExists(name)
-    if not res[0]:
-        return res[1]
+    try:
+        if not checkListExists(name) or not checkItemExists(id):
+            return "", 404
 
-    res = checkItemExists(id)
-    if not res[0]:
-        return res[1]
-
-    res = conn.execute(sqlCommands["deleteItem"], (id,))
-    if res[0]:
+        conn.execute(SQLCommands["deleteItem"], (id,))
         return "", 200
-    return jsonify(res[1]), 418
-
-if __name__ == '__main__':
-    app.run(debug=True)
+    except Exception as e:
+        return jsonify(e), 418

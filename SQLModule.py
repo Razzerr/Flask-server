@@ -6,18 +6,15 @@ class SQLConnector:
         self.curs = self.mysql.cursor()
 
     def select(self, querry, args):
-        try:
-            self.curs.execute(querry, args)
-            result = self.curs.fetchall()
-            return (True, result)
-        except Exception as e:
-            return (False, str(e))
+        self.curs.execute(querry, args)
+        result = self.curs.fetchall()
+        return result
 
     def execute(self, querry, args):
         try:
             self.curs.execute(querry, args)
             self.mysql.commit()
-            return (True, "")
+            return
         except Exception as e:
             self.mysql.rollback()
-            return (False, str(e))
+            raise e
