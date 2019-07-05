@@ -1,10 +1,10 @@
 import sys
 import getopt
-from Server import startApp
+from server import startApp
 
-address = 'localhost'
+address = '0.0.0.0'
 login = 'root'
-password = '!C75dcdc'
+password = 'toor'
 database = 'restfullists'
 
 opts, args = getopt.getopt(sys.argv[1:], "ha:l:p:d:")

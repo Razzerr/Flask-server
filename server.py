@@ -1,19 +1,23 @@
-import sys
+import sys, time
 from flask import Flask, jsonify, request
 from SQLModule import SQLConnector
 from ServerConstants import *
 
 app = Flask(__name__)
 conn = None
+DBData = []
 
 def startApp(address, login, password, database):
     global conn
+    global DBData
     try:
         conn = SQLConnector(address, login, password, database)
+        DBData = [address, login, password, database]
     except Exception as e:
-        print(e)
+        print(str(e))
         sys.exit()
-    app.run(debug=True)
+    	
+    app.run(debug=True, host='0.0.0.0')
 
 ### General functions
 
@@ -31,6 +35,18 @@ def checkItemExists(id):
     """
     res = conn.select(SQLCommands["selectItem"], (id,))
     return (True if len(res) == 1 else False)
+    
+### /restartDB
+@app.route('/restartDB', methods=['GET'])
+def restartApp():
+    global conn
+    global DBData
+    try:
+        conn = SQLConnector(DBData[0], DBData[1], DBData[2], DBData[3])
+        return "", 200
+    except Exception as e:
+        print(str(e))
+        return "", 418
 
 ### /lists
 
@@ -43,7 +59,8 @@ def listsGet():
         res = conn.select(SQLCommands["selectLists"], ())
         return jsonify([checklist[0] for checklist in res]), 200
     except Exception as e:
-        return jsonify(e), 418
+        print(str(e))
+        return "", 418
 
 
 @app.route('/lists', methods=['POST'])
@@ -61,7 +78,8 @@ def listCreate():
         conn.execute(SQLCommands["createList"], (rq,))
         return "", 201
     except Exception as e:
-        return jsonify(e), 418
+        print(str(e))
+        return "", 418
 
 ### /lists/{name}
 
@@ -80,7 +98,8 @@ def listDelete(name):
         conn.execute(SQLCommands["deleteList"], (name,))
         return "", 200
     except Exception as e:
-        return jsonify(e), 418
+        print(str(e))
+        return "", 418
 
 ### /lists/{name}/items
 
@@ -102,7 +121,8 @@ def itemGet(name):
                          "checked" : True if item[1] == 1 else False}
                           for item in res]), 200
     except Exception as e:
-        return jsonify(e), 418
+        print(str(e))
+        return "", 418
 
 @app.route('/lists/<name>/items', methods=['POST'])
 def itemAdd(name):
@@ -123,8 +143,8 @@ def itemAdd(name):
         conn.execute(SQLCommands["createItem"], (nextID, name, rq,))
         return jsonify(nextID), 201
     except Exception as e:
-        print(e)
-        return jsonify(e), 418
+        print(str(e))
+        return "", 418
 
 ### /lists/{name}/items/{id}
 
@@ -144,7 +164,8 @@ def itemChangeState(name, id):
         conn.execute(SQLCommands["chStateItem"], (1 if rq else 0, id,))
         return "", 202
     except Exception as e:
-        return jsonify(e), 418
+        print(str(e))
+        return "", 418
 
 @app.route('/lists/<name>/items/<id>', methods=['DELETE'])
 def itemDelete(name, id):
@@ -158,4 +179,5 @@ def itemDelete(name, id):
         conn.execute(SQLCommands["deleteItem"], (id,))
         return "", 200
     except Exception as e:
-        return jsonify(e), 418
+        print(str(e))
+        return "", 418
